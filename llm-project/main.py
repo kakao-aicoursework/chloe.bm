@@ -7,6 +7,7 @@ import chromadb
 import openai
 
 openai.api_key = os.getenv('GPT_KEY', '')
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def main():
@@ -86,7 +87,7 @@ def main():
 
     font = ("맑은 고딕", 10)
 
-    conversation = scrolledtext.ScrolledText(window, wrap=tk.WORD, bg='#f0f0f0', font=font)
+    conversation = scrolledtext.ScrolledText(window, wrap=tk.WORD, fg='black', bg='#f0f0f0', font=font)
     # width, height를 없애고 배경색 지정하기(2)
     conversation.tag_configure("user", background="#c9daf8")
     # 태그별로 다르게 배경색 지정하기(3)
