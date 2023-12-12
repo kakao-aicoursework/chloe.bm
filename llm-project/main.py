@@ -1,38 +1,28 @@
 import json
-import openai
+import os
 import tkinter as tk
 from tkinter import scrolledtext
-import os
 
-from service import message
+import chromadb
+import openai
 
 openai.api_key = os.getenv('GPT_KEY', '')
 
+
 def main():
+    # 데이터 저장
+    content = read_file('./resources/project_data_kakao_channel.txt')
+    ids, documents = generate_date(content)
+    collection = get_or_create_db("kakao-channel")
+    save_data(collection, ids, documents)
+
     message_log = [
         {
             "role": "system",
             "content": '''
-            You are a DJ assistant who creates playlists. Your user will be Korean, so communicate in Korean, but you must not translate artists' names and song titles into Korean.
-                - At first, suggest songs to make a playlist based on users' request. The playlist must contains the title, artist, and release year of each song in a list format. You must ask the user if they want to save the playlist as follow: "이 플레이리스트를 CSV로 저장하시겠습니까?"
+            You are a customer advisor. 
+            If a user asks about a function they don’t know, you must kindly answer in Korean.
             '''
-        }
-    ]
-
-    functions = [
-        {
-            "name": "save_playlist_as_csv",
-            "description": "Saves the given playlist data into a CSV file when the user confirms the playlist.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "playlist_csv": {
-                        "type": "string",
-                        "description": "A playlist in CSV format separated by ';'. It must contains a header and the release year should follow the 'YYYY' format. The CSV content must starts with a new line. The header of the CSV file must be in English and it should be formatted as follows: 'Title;Artist;Released'.",
-                    },
-                },
-                "required": ["playlist_csv"],
-            },
         }
     ]
 
@@ -80,7 +70,7 @@ def main():
         thinking_popup = show_popup_message(window, "처리중...")
         window.update_idletasks()
         # '생각 중...' 팝업 창이 반드시 화면에 나타나도록 강제로 설정하기
-        response = message.send_message(message_log, functions)
+        response = chat(collection, message_log)
         thinking_popup.destroy()
 
         message_log.append({"role": "assistant", "content": response})
@@ -96,7 +86,7 @@ def main():
 
     font = ("맑은 고딕", 10)
 
-    conversation = scrolledtext.ScrolledText(window, wrap=tk.WORD, fg='black', bg='#f0f0f0', font=font)
+    conversation = scrolledtext.ScrolledText(window, wrap=tk.WORD, bg='#f0f0f0', font=font)
     # width, height를 없애고 배경색 지정하기(2)
     conversation.tag_configure("user", background="#c9daf8")
     # 태그별로 다르게 배경색 지정하기(3)
@@ -116,6 +106,132 @@ def main():
 
     window.bind('<Return>', lambda event: on_send())
     window.mainloop()
+
+
+def read_file(file_name):
+    with open(file_name, 'r') as f:
+        content = f.read()
+        return content
+
+
+def generate_date(content):
+    # 데이터 인덱스
+    ids = []
+    # 벡터로 변환 저장할 텍스트 데이터
+    documents = []
+
+    # 소제목 앞에 #이 붙어있으므로 그에 맞추어 자르기
+    datas = content.strip().split("\n#")
+    # 맨 첫줄에 나와있는 제목 형식이 '{content}: ' 이므로 그에 맞추어 자르기
+    file_title = datas[0].strip().split(":")[0]
+
+    for idx in range(1, len(datas)):
+        # 첫 줄 소제목
+        split_data = datas[idx].split('\n')
+        data_title = split_data[0]
+        # 소제목을 제외한 나머지 내용을 전부 content로 본다.
+        del split_data[0]
+        data_content = ''.join(split_data).replace('\n', '')
+        ids.append(f'{file_title}-{idx}')
+        documents.append(f'{data_title} : {data_content}')
+
+    return ids, documents
+
+
+def get_or_create_db(db_name):
+    client = chromadb.PersistentClient()
+    collection = client.get_or_create_collection(
+        name=db_name,
+        metadata={"hnsw:space": "cosine"}
+    )
+
+    return collection
+
+
+def save_data(collection, ids, documents):
+    # DB 저장
+    collection.upsert(
+        documents=documents,
+        ids=ids
+    )
+
+
+def get_data(collection, query):
+    # 쿼리 조회
+    vector_datas = collection.query(
+        query_texts=[query],
+        n_results=1,
+    )
+
+    result = []
+    for idx, data in enumerate(vector_datas['documents'][0]):
+        item = data.split(':')
+        result.append({
+            "title": item[0].strip(),
+            "content": item[1].strip()
+        })
+
+    return result
+
+
+def chat(collection, message_log, gpt_model="gpt-3.5-turbo", temperature=0):
+    response = data_call_func(message_log, gpt_model, temperature)
+    print(json.dumps(response, ensure_ascii=False))
+
+    if response.get("function_call"):
+        if response["function_call"]["name"] == "get_data":
+            message_log.append(response)
+
+            arguments = json.loads(response.function_call.arguments)
+            datas = get_data(collection, arguments['query'])
+
+            message_log.append(
+                {
+                    "role": "function",
+                    "name": "get_data",
+                    "content": json.dumps(datas, ensure_ascii=False),
+                }
+            )
+
+            response = openai.ChatCompletion.create(
+                model=gpt_model,
+                messages=message_log,
+                temperature=temperature,
+            )
+
+        return response.choices[0].message.content
+
+    else:
+        return response.content
+
+
+def data_call_func(message_log, gpt_model, temperature):
+    functions = [
+        {
+            "name": "get_data",
+            "description": "카카오톡 채널 기능 검색",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "질문 키워드",
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    ]
+
+    completion = openai.ChatCompletion.create(
+        model=gpt_model,
+        messages=message_log,
+        functions=functions,
+        function_call="auto",
+        temperature=temperature
+    )
+
+    return completion.choices[0].message
 
 
 if __name__ == "__main__":
