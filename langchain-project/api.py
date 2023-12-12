@@ -33,7 +33,7 @@ async def skill(req: ChatbotRequest):
     return commerce_card_sample
 
 # callback.py 로 연결
-@app.post("/callback")
+@app.post("/skill/callback")
 async def skill(req: ChatbotRequest, background_tasks: BackgroundTasks):
     #핸들러 호출 / background_tasks 변경가능
     background_tasks.add_task(callback_handler, req)

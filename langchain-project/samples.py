@@ -19,12 +19,12 @@ simple_text_sample = {
         ],
         "quickReplies": [
             {
-                "messageText": "Basic Card 보여주세요",
+                "messageText": "베이직카드",
                 "action": "message",
                 "label": "Basic"
             },
             {
-                "messageText": "Commerce Card 보여주세요",
+                "messageText": "커머스카드",
                 "action": "message",
                 "label": "Commerce"
             },
@@ -42,7 +42,7 @@ basic_card_sample = {
                     "title": "라이언",
                     "description": "덩치는 크지만 마음은 여린 수사자",
                     "thumbnail": {
-                        "imageUrl": "https://t1.kakaocdn.net/friends/new_store/prod/character/character_20230609082239_4d31bb9f1570488fa272c6c3f62ead6c.jpg"
+                        "imageUrl": "https://t1.kakaocdn.net/friends/prod/product/20230620141231526_8809922502300_AW_00.jpg"
                     },
                     "buttons": [
                         {
